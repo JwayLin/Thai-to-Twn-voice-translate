@@ -11,6 +11,7 @@ export class GeminiLiveService {
   private inputAudioContext: AudioContext | null = null;
   private outputAudioContext: AudioContext | null = null;
   private inputSource: MediaStreamAudioSourceNode | null = null;
+  private inputGainNode: GainNode | null = null;
   private scriptProcessor: ScriptProcessorNode | null = null;
   private outputNode: GainNode | null = null;
   private nextStartTime: number = 0;
@@ -121,6 +122,11 @@ export class GeminiLiveService {
     if (!this.inputAudioContext) return;
 
     this.inputSource = this.inputAudioContext.createMediaStreamSource(stream);
+    
+    // Create GainNode to control input volume (Mute/Unmute)
+    this.inputGainNode = this.inputAudioContext.createGain();
+    this.inputGainNode.gain.value = 1; // Default: Unmuted
+
     // Buffer size 4096 provides a balance between latency and processing overhead
     this.scriptProcessor = this.inputAudioContext.createScriptProcessor(4096, 1, 1);
 
@@ -137,7 +143,9 @@ export class GeminiLiveService {
       }).catch(console.error);
     };
 
-    this.inputSource.connect(this.scriptProcessor);
+    // Connect: Source -> GainNode -> ScriptProcessor -> Destination
+    this.inputSource.connect(this.inputGainNode);
+    this.inputGainNode.connect(this.scriptProcessor);
     this.scriptProcessor.connect(this.inputAudioContext.destination);
   }
 
@@ -167,8 +175,17 @@ export class GeminiLiveService {
         source.buffer = audioBuffer;
         source.connect(this.outputNode);
         
+        // Mute microphone when model starts speaking to prevent feedback
+        if (this.inputGainNode) {
+            this.inputGainNode.gain.value = 0;
+        }
+        
         source.addEventListener('ended', () => {
           this.sources.delete(source);
+          // Unmute only if no other audio is playing
+          if (this.sources.size === 0 && this.inputGainNode) {
+              this.inputGainNode.gain.value = 1;
+          }
         });
 
         source.start(this.nextStartTime);
@@ -187,6 +204,11 @@ export class GeminiLiveService {
         });
         this.sources.clear();
         this.nextStartTime = 0;
+        
+        // Immediate unmute on interruption
+        if (this.inputGainNode) {
+            this.inputGainNode.gain.value = 1;
+        }
     }
   }
 
@@ -195,6 +217,10 @@ export class GeminiLiveService {
     if (this.inputSource) {
       this.inputSource.disconnect();
       this.inputSource = null;
+    }
+    if (this.inputGainNode) {
+      this.inputGainNode.disconnect();
+      this.inputGainNode = null;
     }
     if (this.scriptProcessor) {
       this.scriptProcessor.disconnect();
