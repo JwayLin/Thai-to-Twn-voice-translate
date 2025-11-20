@@ -1,0 +1,7 @@
+{
+  "name": "Thai-Taiwanese Live Translator",
+  "description": "Real-time conversational voice translation between Thai and Taiwanese Hokkien using Gemini Live API.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
